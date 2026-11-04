@@ -19,7 +19,6 @@ targets:
       - path: Devamsizlik
       # Linux'ta da test edilen çekirdek (hesaplamalar, içe aktarma, bildirim planı)
       - path: Sources/DevamsizlikCore
-        group: Core
     info:
       path: Devamsizlik/Info.plist
       properties:
