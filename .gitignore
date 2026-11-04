@@ -7,3 +7,14 @@ local.properties
 captures/
 .kotlin/
 *.apk
+
+# iOS
+ios/.build/
+ios/.swiftpm/
+ios/shots/
+ios/Payload/
+ios/build-udid.txt
+*.ipa
+# XcodeGen ile üretilenler (ios/project.yml'den)
+ios/Devamsizlik.xcodeproj/
+ios/Devamsizlik/Info.plist

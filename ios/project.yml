@@ -1,0 +1,56 @@
+# Xcode projesi bu dosyadan üretilir:  brew install xcodegen && xcodegen generate
+name: Devamsizlik
+options:
+  bundleIdPrefix: com.deveciahmet
+  deploymentTarget:
+    iOS: "16.0"
+  developmentLanguage: tr
+  createIntermediateGroups: true
+settings:
+  base:
+    SWIFT_VERSION: "5.0"
+    MARKETING_VERSION: "1.1"
+    CURRENT_PROJECT_VERSION: "2"
+targets:
+  Devamsizlik:
+    type: application
+    platform: iOS
+    sources:
+      - path: Devamsizlik
+      # Linux'ta da test edilen çekirdek (hesaplamalar, içe aktarma, bildirim planı)
+      - path: Sources/DevamsizlikCore
+        group: Core
+    info:
+      path: Devamsizlik/Info.plist
+      properties:
+        CFBundleDisplayName: Devamsızlık
+        CFBundleDevelopmentRegion: tr
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        LSRequiresIPhoneOS: true
+        UILaunchScreen: {}
+        UIApplicationSceneManifest:
+          UIApplicationSupportsMultipleScenes: false
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationPortrait
+        UIBackgroundModes:
+          - fetch
+        BGTaskSchedulerPermittedIdentifiers:
+          - com.deveciahmet.devamsizlik.refresh
+        ITSAppUsesNonExemptEncryption: false
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.deveciahmet.devamsizlik
+        PRODUCT_NAME: Devamsizlik
+        TARGETED_DEVICE_FAMILY: "1"
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        CODE_SIGN_STYLE: Automatic
+schemes:
+  Devamsizlik:
+    build:
+      targets:
+        Devamsizlik: all
+    run:
+      config: Debug
+    archive:
+      config: Release

@@ -1,0 +1,51 @@
+name: iOS derle
+
+on:
+  push:
+    paths:
+      - 'ios/**'
+      - '.github/workflows/ios.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: macos-15
+    defaults:
+      run:
+        working-directory: ios
+    steps:
+      - uses: actions/checkout@v5
+      - name: Sürümler
+        run: xcodebuild -version && swift --version
+      - name: Çekirdek testleri
+        run: swift test
+      - name: Xcode projesini oluştur
+        run: |
+          brew install xcodegen
+          xcodegen generate
+      - name: Simülatör için derle
+        run: ci/build-simulator.sh
+      - name: Ekran görüntüleri
+        run: ci/screenshots.sh
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ios-ekran-goruntuleri
+          path: ios/shots
+          if-no-files-found: ignore
+      - name: iPhone için derle (imzasız IPA)
+        run: ci/build-ipa.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Devamsizlik-ios
+          path: ios/Devamsizlik-imzasiz.ipa
+      - name: Release olarak yayınla
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: latest
+          name: Devamsızlık (son sürüm)
+          make_latest: true
+          files: ios/Devamsizlik-imzasiz.ipa
