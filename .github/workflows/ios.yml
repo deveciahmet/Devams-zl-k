@@ -10,6 +10,11 @@ on:
 permissions:
   contents: write
 
+# Yeni gönderim gelince sıradaki/çalışan eski iOS derlemesini iptal et
+concurrency:
+  group: ios-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   build:
     runs-on: macos-15

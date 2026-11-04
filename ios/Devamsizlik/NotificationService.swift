@@ -87,7 +87,7 @@ enum BackgroundRefresh {
     static let identifier = "com.deveciahmet.devamsizlik.refresh"
 
     static func register() {
-        BGTaskScheduler.shared.register(forTaskWithIdentifier: identifier, using: nil) { task in
+        _ = BGTaskScheduler.shared.register(forTaskWithIdentifier: identifier, using: nil) { task in
             DispatchQueue.main.async {
                 AppModel.shared.refresh()
                 schedule()
