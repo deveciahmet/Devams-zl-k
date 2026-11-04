@@ -18,11 +18,10 @@ import androidx.compose.material3.dynamicLightColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
-import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshots.SnapshotStateList
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 
@@ -30,7 +29,26 @@ sealed interface Screen {
     data object Home : Screen
     data object Fill : Screen
     data object Settings : Screen
+    data object Import : Screen
     data class Course(val code: String) : Screen
+    data class CourseEdit(val code: String) : Screen
+}
+
+/** Basit geri yığını. */
+class Nav(private val stack: SnapshotStateList<Screen>) {
+    val current: Screen get() = stack.last()
+    val canPop: Boolean get() = stack.size > 1
+    fun push(s: Screen) {
+        stack.add(s)
+    }
+
+    fun pop() {
+        if (stack.size > 1) stack.removeAt(stack.lastIndex)
+    }
+
+    fun replace(old: Screen, new: Screen) {
+        for (i in stack.indices) if (stack[i] == old) stack[i] = new
+    }
 }
 
 class MainActivity : ComponentActivity() {
@@ -42,11 +60,11 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
-        Notifier.ensureChannel(this)
+        Notifier.ensureChannels(this)
         setContent {
             AppTheme {
                 PermissionRequester()
-                App(version.intValue, bump = { version.intValue++ })
+                App(version.intValue)
             }
         }
     }
@@ -55,7 +73,7 @@ class MainActivity : ComponentActivity() {
         super.onStart()
         Repo.attendance(this).registerOnSharedPreferenceChangeListener(listener)
         Repo.settings(this).registerOnSharedPreferenceChangeListener(listener)
-        Alarms.scheduleNext(this)
+        Scheduler.reschedule(this)
         version.intValue++
     }
 
@@ -86,14 +104,18 @@ fun AppTheme(content: @Composable () -> Unit) {
 }
 
 @Composable
-fun App(version: Int, bump: () -> Unit) {
-    var screen by remember { mutableStateOf<Screen>(Screen.Home) }
-    BackHandler(enabled = screen != Screen.Home) { screen = Screen.Home }
-    when (val s = screen) {
-        Screen.Home -> HomeScreen(version, onFill = { screen = Screen.Fill },
-            onSettings = { screen = Screen.Settings }, onCourse = { screen = Screen.Course(it) })
-        Screen.Fill -> SessionListScreen(version, bump, courseCode = null, onBack = { screen = Screen.Home })
-        is Screen.Course -> SessionListScreen(version, bump, courseCode = s.code, onBack = { screen = Screen.Home })
-        Screen.Settings -> SettingsScreen(version, bump, onBack = { screen = Screen.Home })
+fun App(version: Int) {
+    val ctx = LocalContext.current
+    val snap = remember(version) { Repo.snapshot(ctx) }
+    val stack = remember { mutableStateListOf<Screen>(Screen.Home) }
+    val nav = remember { Nav(stack) }
+    BackHandler(enabled = stack.size > 1) { nav.pop() }
+    when (val s = nav.current) {
+        Screen.Home -> HomeScreen(snap, nav)
+        Screen.Fill -> SessionsScreen(snap, null, nav)
+        Screen.Settings -> SettingsScreen(snap, nav)
+        Screen.Import -> ImportScreen(nav)
+        is Screen.Course -> SessionsScreen(snap, s.code, nav)
+        is Screen.CourseEdit -> CourseEditScreen(snap, s.code, nav)
     }
 }

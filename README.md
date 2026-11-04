@@ -11,17 +11,30 @@ devamsızlıklarını sayan ve hakkı biten dersleri uyaran Android uygulaması.
 
 ## Özellikler
 - **Ders bitiminde bildirim**: *Evet / Hayır / Ders yapılmadı* tuşları. Tuşa basınca uygulamayı açmadan kaydedilir.
+- **Derste birden fazla yoklama**: Ders başına yoklama sayısı (1–4) ayarlanabilir. 2 yoklamalı 2 saatlik derste
+  ilk soru dersin başlamasından 1 saat sonra, ikincisi ders bitiminde gelir; her saat ayrı sayılır.
+- **Bildirimden sonra hatırlatma**: Cevap vermez ya da bildirimi kapatırsan 15 / 30 / 60 dk sonra bir kez daha sorar.
+- **Haftalık özet**: Seçtiğin gün ve saatte (varsayılan Pazartesi 08:00) son 7 günün özeti ve riskli dersler.
+- **Erken uyarı**: "Hayır" deyince kalan hakkın 1 (ya da seçtiğin sayıya) inerse hemen uyarır; ayrıca hakkı azalan
+  derslerden 30 dk / 1 saat / 2 saat önce "kaçırma" hatırlatması gönderir.
+- **Programı fotoğraftan ekleme**: Uygulamadaki hazır metni kopyala, ders programının fotoğrafıyla birlikte
+  ChatGPT / Gemini / Claude gibi bir yapay zekâya gönder, cevabı uygulamaya yapıştır. Uygulama cevabı çözer,
+  hatalı satırları gösterir, kontrol listesinde düzeltmeni ister ve onaylayınca programa kaydeder.
+- **Derse özel ayarlar**: Ders adı ve kodu, dönemde kaç kez yapılacağı (otomatik ya da elle),
+  devam şartı (varsayılan / yüzde / "kaç kez gelmeme hakkı"), ders başına yoklama sayısı.
 - **Ana ekran**: her ders için devamsızlık sayısı, yüzdesi, kalan hak, girilen/kalan ders sayısı.
-- **Özel uyarı**: hakkı biten (veya sınırı aşılan) dersler kırmızı kartla en üstte gösterilir.
-- **Eksik haftaları doldurma**: geçmişte işaretlenmemiş dersler listelenir; elle *Girdim / Girmedim / Ders yapılmadı* seçilir.
-  "Hepsini Girdim yap" ile hızlıca doldurup sadece girmediklerini değiştirebilirsin.
-- **Ders detayı**: bir derse dokununca o dersin tüm haftaları; geçmişi düzeltebilir, ileri tarihli tatil/iptalleri işaretleyebilirsin.
-- **Ayarlar**: dönem başlangıcı / şu anki hafta, toplam hafta (13), devamsızlık sınırı (%30), ders programı ekle/sil, test bildirimi.
+  Hakkı biten (veya sınırı aşılan) dersler kırmızı kartla en üstte gösterilir.
+- **Eksik haftaları doldurma**: geçmişte işaretlenmemiş yoklamalar listelenir; elle *Girdim / Girmedim / Yapılmadı*
+  seçilir. "Hepsini Girdim yap" ile hızlıca doldurup sadece girmediklerini değiştirebilirsin.
+- **Ders detayı**: bir derse dokununca o dersin tüm haftaları; geçmişi düzeltebilir, ileri tarihli tatil/iptalleri
+  işaretleyebilirsin.
 
 ## Hesaplama
-- Toplam ders = 13 hafta × haftalık oturum − "ders yapılmadı" olanlar
-- Devamsızlık hakkı = ⌊toplam × %30⌋  (ör. haftada 1 oturumlu ders: 13 × 0,3 = 3 hak)
-- Haftada 2 oturumu olan dersler (MAK 303, MAK 305) her oturum ayrı sayılır (26 oturum → 7 hak).
+- Toplam = dönemdeki ders sayısı × ders başına yoklama
+  (otomatikte: 13 hafta × haftalık ders − "yapılmadı" işaretlenenler)
+- Devam şartı %p ise devamsızlık hakkı = ⌊toplam × (100 − p) / 100⌋
+  (ör. haftada 1 dersi olan ders, %70 şart: 13 × 0,3 → 3 hak; haftada 2 dersi olan: 26 → 7 hak)
+- "Gelmeme hakkı" seçilirse hak doğrudan girilen sayıdır.
 
 ## Varsayılan program (OBS)
 | Gün | Saat | Ders |
@@ -40,8 +53,10 @@ devamsızlıklarını sayan ve hakkı biten dersleri uyaran Android uygulaması.
 
 1. hafta = 28 Eylül 2026 (4 Kasım 2026 → 6. hafta). Ayarlardan değiştirilebilir.
 
-## Derleme
+## Derleme ve testler
 ```
+./gradlew testDebugUnitTest   # hesaplama, içe aktarma, bildirim akışı ve arayüz testleri (Robolectric)
 ./gradlew assembleDebug
 ```
 APK: `app/build/outputs/apk/debug/app-debug.apk`
+Testler ekranların görüntülerini `app/build/screenshots/` altına da kaydeder.

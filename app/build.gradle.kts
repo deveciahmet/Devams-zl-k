@@ -12,8 +12,8 @@ android {
         applicationId = "com.deveciahmet.devamsizlik"
         minSdk = 26
         targetSdk = 35
-        versionCode = 1
-        versionName = "1.0"
+        versionCode = 2
+        versionName = "1.1"
     }
 
     signingConfigs {
@@ -46,6 +46,12 @@ android {
     buildFeatures {
         compose = true
     }
+    testOptions {
+        unitTests {
+            // Robolectric (Android'i JVM'de taklit eden test ortamı) kaynaklara erişebilsin
+            isIncludeAndroidResources = true
+        }
+    }
 }
 
 dependencies {
@@ -56,4 +62,12 @@ dependencies {
     implementation("androidx.compose.ui:ui")
     implementation("androidx.compose.material3:material3")
     implementation("androidx.compose.material:material-icons-core")
+
+    testImplementation("junit:junit:4.13.2")
+    // Android'deki org.json'un JVM birim testlerinde çalışan gerçek hali
+    testImplementation("org.json:json:20240303")
+    testImplementation("org.robolectric:robolectric:4.14.1")
+    testImplementation("androidx.test:core-ktx:1.6.1")
+    testImplementation(composeBom)
+    testImplementation("androidx.compose.ui:ui-test-junit4")
 }

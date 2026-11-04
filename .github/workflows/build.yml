@@ -15,7 +15,9 @@ jobs:
       - uses: actions/setup-java@v5
         with:
           distribution: temurin
-          java-version: 17
+          java-version: 21
+      - name: Testler
+        run: ./gradlew testDebugUnitTest --no-daemon
       - name: Derle
         run: ./gradlew assembleDebug --no-daemon
       - run: cp app/build/outputs/apk/debug/app-debug.apk Devamsizlik.apk
