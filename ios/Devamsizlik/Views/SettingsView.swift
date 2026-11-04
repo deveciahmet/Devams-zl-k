@@ -63,7 +63,7 @@ struct SettingsView: View {
                             Text(verbatim: snap.title(s.code)).foregroundColor(.primary)
                             Text(verbatim: (snap.config(s.code).name.isEmpty ? "" : "\(s.code) • ") +
                                  "\(dayLongName(s.day))  \(s.start.text)–\(s.end.text)")
-                                .font(.caption).foregroundStyle(.secondary)
+                                .font(.caption).foregroundColor(.secondary)
                         }
                     }
                     .swipeActions {

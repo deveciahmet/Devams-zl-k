@@ -65,8 +65,12 @@ struct SessionsView: View {
         .toolbar {
             ToolbarItem(placement: .navigationBarTrailing) {
                 if let code = courseCode {
-                    NavigationLink(value: Route.courseEdit(code)) { Image(systemName: "pencil") }
-                        .accessibilityLabel("Ders ayarları")
+                    Button {
+                        model.path.append(.courseEdit(code))
+                    } label: {
+                        Image(systemName: "pencil")
+                    }
+                    .accessibilityLabel("Ders ayarları")
                 }
             }
         }

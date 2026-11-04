@@ -41,21 +41,17 @@ struct ImportView: View {
                     .lineLimit(expanded ? nil : 6)
                     .onTapGesture { expanded.toggle() }
                 HStack(spacing: 10) {
-                    Button {
+                    Button(copied ? "Kopyalandı ✓" : "Kopyala") {
                         UIPasteboard.general.string = importPrompt
                         copied = true
-                    } label: {
-                        Label(copied ? "Kopyalandı" : "Kopyala", systemImage: copied ? "checkmark" : "doc.on.doc")
                     }
                     .buttonStyle(.borderedProminent)
-                    ShareLink(item: importPrompt) {
-                        Label("Paylaş", systemImage: "square.and.arrow.up")
-                    }
-                    .buttonStyle(.bordered)
-                    Spacer()
-                    Button(expanded ? "Daralt" : "Tamamı") { expanded.toggle() }
-                        .buttonStyle(.borderless)
+                    ShareLink("Paylaş", item: importPrompt)
+                        .buttonStyle(.bordered)
                 }
+                .lineLimit(1)
+                Button(expanded ? "Metni daralt" : "Metnin tamamını göster") { expanded.toggle() }
+                    .buttonStyle(.borderless)
             }
 
             Section(header: Text("2. Yapay zekânın cevabını buraya yapıştır")) {
@@ -102,7 +98,7 @@ struct ImportView: View {
                                     Text(verbatim: e.code + (e.name.isEmpty ? "" : " · \(e.name)"))
                                         .foregroundColor(.primary)
                                     Text(verbatim: "\(dayLongName(e.day))  \(e.start.text)–\(e.end.text)")
-                                        .font(.caption).foregroundStyle(.secondary)
+                                        .font(.caption).foregroundColor(.secondary)
                                 }
                             }
                         }
