@@ -17,7 +17,9 @@ concurrency:
 
 jobs:
   build:
-    runs-on: macos-15
+    # Apple silicon (arm64) Mac sunucularında kapasite sıkıntısı olduğu için Intel Mac
+    runs-on: macos-15-intel
+    timeout-minutes: 60
     defaults:
       run:
         working-directory: ios
