@@ -103,12 +103,12 @@ class NotificationFlowTest {
         fireAlarm("2026-11-02T13:29:05")
         val am = shadowOf(ctx.getSystemService(AlarmManager::class.java))
         // Cevap yokken sıradaki olay 30 dk sonraki hatırlatma
-        assertEquals(millis("2026-11-02T13:59:00"), am.scheduledAlarms.single().triggerAtTime)
+        assertEquals(millis("2026-11-02T13:59:00"), am.scheduledAlarms.single().getTriggerAtMs())
 
         tap(posted().single(), "Hayır")
         assertEquals(Status.ABSENT, Repo.status(ctx, "mak335-pzt|2026-11-02"))
         // Cevap gelince hatırlatma iptal, sıradaki olay MAK 303'ün bitişi
-        assertEquals(millis("2026-11-02T17:29:00"), am.scheduledAlarms.single().triggerAtTime)
+        assertEquals(millis("2026-11-02T17:29:00"), am.scheduledAlarms.single().getTriggerAtMs())
     }
 
     @Test
@@ -198,7 +198,7 @@ class NotificationFlowTest {
         BootReceiver().onReceive(ctx, Intent(Intent.ACTION_BOOT_COMPLETED))
         val am = shadowOf(ctx.getSystemService(AlarmManager::class.java))
         // Çarşamba MAK 305 08:30–10:29
-        assertEquals(millis("2026-11-04T10:29:00"), am.scheduledAlarms.single().triggerAtTime)
+        assertEquals(millis("2026-11-04T10:29:00"), am.scheduledAlarms.single().getTriggerAtMs())
     }
 
     @Test
@@ -265,5 +265,70 @@ class NotificationFlowTest {
         assertEquals(75, Repo.requiredPercent(ctx))
         Repo.setRequiredPercent(ctx, 80)
         assertEquals(80, Repo.requiredPercent(ctx))
+    }
+
+    @Test
+    fun testNotification_answerIsNotRecorded() {
+        at("2026-11-02T14:00:00")
+        val snap = Repo.snapshot(ctx)
+        val poll = snap.polls.last { !it.time.isAfter(snap.now) }
+        Notifier.askPoll(ctx, poll, snap.config(poll.code), reminder = false, test = true)
+        val n = posted().single()
+        assertEquals("Test: MAK 335 dersine girdin mi?", title(n))
+        assertTrue(big(n).contains("kaydedilmez"))
+        tap(n, "Hayır")
+        assertNull(Repo.status(ctx, poll.key))
+        assertTrue(Repo.statusMap(ctx).isEmpty())
+        assertTrue("test bildirimi kapanmalı", posted().isEmpty())
+    }
+
+    @Test
+    fun tappingQuestion_opensThatCoursesMarkingScreen() {
+        at("2026-11-02T13:00:00")
+        Scheduler.reschedule(ctx)
+        fireAlarm("2026-11-02T13:29:05")
+        val intent = shadowOf(posted().single().contentIntent).savedIntent
+        assertEquals(MainActivity::class.java.name, intent.component?.className)
+        assertEquals(
+            OpenRequest(OpenRequest.COURSE, "MAK 335", "mak335-pzt|2026-11-02"),
+            OpenRequest.from(intent),
+        )
+    }
+
+    @Test
+    fun examReminder_comesTheEveningBefore() {
+        Repo.saveExam(ctx, Exam("e1", "MAK 335", "Vize", java.time.LocalDate.of(2026, 11, 17), java.time.LocalTime.of(13, 30), "MKB A501"))
+        at("2026-11-16T19:00:00")
+        Scheduler.reschedule(ctx)
+        val am = shadowOf(ctx.getSystemService(AlarmManager::class.java))
+        assertEquals(millis("2026-11-16T20:00:00"), am.scheduledAlarms.single().getTriggerAtMs())
+        fireAlarm("2026-11-16T20:00:05")
+        val n = posted().single()
+        assertEquals(Notifier.CH_EXAM, n.channelId)
+        assertEquals("Yarın sınavın var: MAK 335 · Vize", title(n))
+        assertTrue(big(n), big(n).contains("13:30 • MKB A501"))
+        assertEquals(OpenRequest(OpenRequest.EXAMS), OpenRequest.from(shadowOf(n.contentIntent).savedIntent))
+    }
+
+    @Test
+    fun holiday_noQuestionsThatDay() {
+        Repo.addHolidays(ctx, listOf(java.time.LocalDate.of(2026, 11, 5)))
+        at("2026-11-05T07:00:00")
+        Scheduler.reschedule(ctx)
+        val am = shadowOf(ctx.getSystemService(AlarmManager::class.java))
+        // Perşembe dersleri sorulmaz; sıradaki soru Cuma BEB 104'ün bitişi
+        assertEquals(millis("2026-11-06T12:29:00"), am.scheduledAlarms.single().getTriggerAtMs())
+    }
+
+    @Test
+    fun weeklySummary_listsUpcomingExams() {
+        Repo.setStatus(ctx, "mak335-pzt|2026-11-02", Status.ATTENDED)
+        Repo.saveExam(ctx, Exam("e1", "MAK 303", "Vize", java.time.LocalDate.of(2026, 11, 11), java.time.LocalTime.of(9, 30)))
+        at("2026-11-09T07:00:00")
+        Scheduler.reschedule(ctx)
+        fireAlarm("2026-11-09T08:00:05")
+        val n = posted().single()
+        assertTrue(big(n), big(n).contains("📅 MAK 303 · Vize: Çarşamba 09:30"))
+        assertEquals(OpenRequest(OpenRequest.FILL), OpenRequest.from(shadowOf(n.contentIntent).savedIntent))
     }
 }

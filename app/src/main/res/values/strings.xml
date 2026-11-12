@@ -1,3 +1,4 @@
 <resources>
     <string name="app_name">Devamsızlık</string>
+    <string name="widget_description">Sıradaki ders, sınava kalan gün ve devamsızlık uyarıları</string>
 </resources>

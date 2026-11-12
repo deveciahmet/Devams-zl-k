@@ -1,0 +1,74 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Ana ekran widget'ı (küçük): üstte sıradaki sınava kalan gün, altta sıradaki ders. -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/w_root"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@drawable/widget_bg"
+    android:orientation="vertical"
+    android:padding="10dp">
+
+    <LinearLayout
+        android:id="@+id/w_exam"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:background="@drawable/widget_box_bg"
+        android:gravity="center_vertical"
+        android:orientation="horizontal"
+        android:paddingStart="8dp"
+        android:paddingTop="4dp"
+        android:paddingEnd="8dp"
+        android:paddingBottom="4dp">
+
+        <TextView
+            android:id="@+id/w_exam_big"
+            style="@style/WidgetBig"
+            android:text="5" />
+
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="6dp"
+            android:layout_weight="1"
+            android:orientation="vertical">
+
+            <TextView
+                android:id="@+id/w_exam_small"
+                style="@style/WidgetSmall"
+                android:gravity="start"
+                android:text="gün kaldı" />
+
+            <TextView
+                android:id="@+id/w_exam_title"
+                style="@style/WidgetSmall"
+                android:gravity="start"
+                android:maxLines="1"
+                android:text="Isı Geçişi · Vize" />
+        </LinearLayout>
+    </LinearLayout>
+
+    <LinearLayout
+        android:id="@+id/w_class"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_marginTop="4dp"
+        android:layout_weight="1"
+        android:gravity="center_vertical"
+        android:orientation="vertical">
+
+        <TextView
+            android:id="@+id/w_label"
+            style="@style/WidgetLabel"
+            android:text="Sıradaki ders" />
+
+        <TextView
+            android:id="@+id/w_title"
+            style="@style/WidgetTitle"
+            android:text="Isı Geçişi" />
+
+        <TextView
+            android:id="@+id/w_detail"
+            style="@style/WidgetBody"
+            android:text="Bugün 15:30–17:29" />
+    </LinearLayout>
+</LinearLayout>

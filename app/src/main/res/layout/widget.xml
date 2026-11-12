@@ -1,0 +1,80 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Ana ekran widget'ı (geniş): solda sıradaki ders, sağda sıradaki sınava kalan gün, altta önemli uyarılar. -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/w_root"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@drawable/widget_bg"
+    android:orientation="vertical"
+    android:padding="12dp">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:orientation="horizontal">
+
+        <LinearLayout
+            android:id="@+id/w_class"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:gravity="center_vertical"
+            android:orientation="vertical">
+
+            <TextView
+                android:id="@+id/w_label"
+                style="@style/WidgetLabel"
+                android:text="Sıradaki ders" />
+
+            <TextView
+                android:id="@+id/w_title"
+                style="@style/WidgetTitle"
+                android:text="Isı Geçişi" />
+
+            <TextView
+                android:id="@+id/w_detail"
+                style="@style/WidgetBody"
+                android:text="Bugün 15:30–17:29 · MKB A363" />
+        </LinearLayout>
+
+        <LinearLayout
+            android:id="@+id/w_exam"
+            android:layout_width="96dp"
+            android:layout_height="match_parent"
+            android:layout_marginStart="8dp"
+            android:background="@drawable/widget_box_bg"
+            android:gravity="center"
+            android:orientation="vertical"
+            android:padding="6dp">
+
+            <TextView
+                android:id="@+id/w_exam_big"
+                style="@style/WidgetBig"
+                android:text="5" />
+
+            <TextView
+                android:id="@+id/w_exam_small"
+                style="@style/WidgetSmall"
+                android:text="gün kaldı" />
+
+            <TextView
+                android:id="@+id/w_exam_title"
+                style="@style/WidgetSmall"
+                android:layout_marginTop="2dp"
+                android:maxLines="2"
+                android:text="Isı Geçişi · Vize" />
+        </LinearLayout>
+    </LinearLayout>
+
+    <TextView
+        android:id="@+id/w_msg1"
+        style="@style/WidgetMsg"
+        android:layout_marginTop="6dp"
+        android:text="⚠ Mekanik Titreşimler: son 1 hak" />
+
+    <TextView
+        android:id="@+id/w_msg2"
+        style="@style/WidgetMsg"
+        android:text="3 yoklama işaretlenmemiş" />
+</LinearLayout>

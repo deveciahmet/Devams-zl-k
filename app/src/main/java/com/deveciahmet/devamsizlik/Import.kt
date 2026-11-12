@@ -4,8 +4,43 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.time.LocalTime
 
-/** Yapay zekâdan gelen tek bir ders saati. */
-data class ImportedSlot(val code: String, val name: String, val day: Int, val start: LocalTime, val end: LocalTime)
+/** İçe aktarılan tek bir ders saati (yapay zekâdan ya da İTÜ'nün açılan dersler listesinden). */
+data class ImportedSlot(
+    val code: String,
+    val name: String,
+    val day: Int,
+    val start: LocalTime,
+    val end: LocalTime,
+    val place: String = "",
+)
+
+/**
+ * Programı yapay zekâ ile (hazır metin + fotoğraf + JSON cevabı yapıştırma) ekleme.
+ * Şimdilik kapalı: yerine Kepler fotoğrafından ekleme kullanılıyor. Açmak için true yap.
+ */
+const val PROMPT_IMPORT_ENABLED = false
+
+/** Türkçe karakterleri sadeleştirip küçük harfe çevirir: "Çarşamba" → "carsamba". */
+fun foldTr(s: String): String {
+    val sb = StringBuilder(s.length)
+    for (c in s) {
+        sb.append(
+            when (c) {
+                'ç', 'Ç' -> 'c'
+                'ğ', 'Ğ' -> 'g'
+                'ı', 'I', 'İ', 'i' -> 'i'
+                'ö', 'Ö' -> 'o'
+                'ş', 'Ş' -> 's'
+                'ü', 'Ü' -> 'u'
+                'â', 'Â' -> 'a'
+                'î', 'Î' -> 'i'
+                'û', 'Û' -> 'u'
+                else -> c.lowercaseChar()
+            }
+        )
+    }
+    return sb.toString()
+}
 
 data class ParseResult(val entries: List<ImportedSlot>, val warnings: List<String>, val error: String?)
 
@@ -93,27 +128,7 @@ object ScheduleImport {
         return null
     }
 
-    /** Türkçe karakterleri sadeleştirip küçük harfe çevirir: "Çarşamba" → "carsamba". */
-    private fun fold(s: String): String {
-        val sb = StringBuilder(s.length)
-        for (c in s) {
-            sb.append(
-                when (c) {
-                    'ç', 'Ç' -> 'c'
-                    'ğ', 'Ğ' -> 'g'
-                    'ı', 'I', 'İ', 'i' -> 'i'
-                    'ö', 'Ö' -> 'o'
-                    'ş', 'Ş' -> 's'
-                    'ü', 'Ü' -> 'u'
-                    'â', 'Â' -> 'a'
-                    'î', 'Î' -> 'i'
-                    'û', 'Û' -> 'u'
-                    else -> c.lowercaseChar()
-                }
-            )
-        }
-        return sb.toString()
-    }
+    private fun fold(s: String): String = foldTr(s)
 
     private fun fields(o: JSONObject): Map<String, String> {
         val m = HashMap<String, String>()

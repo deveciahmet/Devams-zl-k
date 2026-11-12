@@ -7,7 +7,6 @@ import android.content.Context
 import android.content.Intent
 import android.os.Build
 import android.widget.Toast
-import java.time.LocalDateTime
 import java.time.ZoneId
 
 /**
@@ -26,7 +25,7 @@ object Scheduler {
         snap.stats.filter { it.remaining <= snap.notify.warnThreshold }.map { it.code }.toSet()
 
     fun events(snap: Snapshot): List<Event> =
-        computeEvents(snap.polls, snap::status, riskyCodes(snap), snap.notify, snap.semesterStart, snap.weeks)
+        computeEvents(snap.polls, snap::status, riskyCodes(snap), snap.notify, snap.semesterStart, snap.weeks, snap.exams)
 
     fun nextAsk(snap: Snapshot): Poll? =
         snap.polls.filter { it.time.isAfter(snap.now) && snap.status(it.key) == null }.minByOrNull { it.time }
@@ -43,7 +42,10 @@ object Scheduler {
             Repo.setCursor(ctx, now)
         }
         val from = maxOf(cursor, now.minusHours(WINDOW_HOURS))
-        val next = events(Repo.snapshot(ctx, now)).filter { it.time.isAfter(from) }.minByOrNull { it.time }
+        val snap = Repo.snapshot(ctx, now)
+        val next = events(snap).filter { it.time.isAfter(from) }.minByOrNull { it.time }
+        // Bütün değişiklikler buradan geçtiği için ana ekran widget'ı da burada güncellenir.
+        Widgets.refresh(ctx, snap)
         val am = ctx.getSystemService(AlarmManager::class.java) ?: return
         if (next == null) {
             tick(ctx, PendingIntent.FLAG_NO_CREATE)?.let { am.cancel(it) }
@@ -91,6 +93,11 @@ object Scheduler {
                 if (st.code in risky) Notifier.preclass(ctx, session, st)
             }
         }
+        if (snap.notify.examReminder) {
+            for (id in due.filter { it.type == EventType.EXAM }.map { it.key }.toSet()) {
+                snap.exams.firstOrNull { it.id == id }?.let { Notifier.examReminder(ctx, it, snap) }
+            }
+        }
         due.lastOrNull { it.type == EventType.WEEKLY }?.let { ev ->
             val sum = summarize(snap.polls, snap::status, ev.time.minusDays(7), ev.time)
             if (sum.total > 0) Notifier.weekly(ctx, sum, snap, ev.time)
@@ -113,6 +120,17 @@ class ActionReceiver : BroadcastReceiver() {
     override fun onReceive(ctx: Context, intent: Intent) {
         val key = intent.getStringExtra(EXTRA_KEY) ?: return
         val status = intent.getStringExtra(EXTRA_STATUS)?.let { runCatching { Status.valueOf(it) }.getOrNull() } ?: return
+        if (intent.getBooleanExtra(EXTRA_TEST, false)) {
+            // Ayarlardaki test bildirimi: hiçbir şey kaydedilmez.
+            Notifier.cancel(ctx, Notifier.TEST_ID)
+            val answer = when (status) {
+                Status.ATTENDED -> "Evet"
+                Status.ABSENT -> "Hayır"
+                Status.CANCELLED -> "Ders yapılmadı"
+            }
+            Toast.makeText(ctx, "Test bildirimi çalışıyor ✓ (\"$answer\" kaydedilmedi)", Toast.LENGTH_LONG).show()
+            return
+        }
         Repo.setStatus(ctx, key, status)
         Notifier.cancelPoll(ctx, key)
 

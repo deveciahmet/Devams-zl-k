@@ -3,23 +3,31 @@
 package com.deveciahmet.devamsizlik
 
 import android.widget.Toast
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -27,12 +35,13 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 
-/** Derse özel ayarlar: ad, kod, dönemdeki ders sayısı, devam şartı / gelmeme hakkı, yoklama sayısı. */
+/** Derse özel ayarlar: ad, kod, saatler, dönemdeki ders sayısı, devam şartı / gelmeme hakkı, yoklama sayısı. */
 @Composable
 fun CourseEditScreen(snap: Snapshot, code: String, nav: Nav) {
     val ctx = LocalContext.current
@@ -53,6 +62,9 @@ fun CourseEditScreen(snap: Snapshot, code: String, nav: Nav) {
     var countText by rememberSaveable(code) { mutableStateOf(cfg0.allowedCount.toString()) }
     var polls by rememberSaveable(code) { mutableIntStateOf(cfg0.polls) }
     var fillNew by rememberSaveable(code) { mutableStateOf(true) }
+    var editingSlot by remember { mutableStateOf<Slot?>(null) }
+    var addingSlot by remember { mutableStateOf(false) }
+    var confirmDelete by remember { mutableStateOf(false) }
 
     val draft = CourseConfig(
         name = name.trim(),
@@ -96,8 +108,28 @@ fun CourseEditScreen(snap: Snapshot, code: String, nav: Nav) {
             OutlinedTextField(codeText, { codeText = it }, label = { Text("Ders kodu") }, singleLine = true,
                 modifier = Modifier.fillMaxWidth())
             OutlinedTextField(name, { name = it }, label = { Text("Ders adı (isteğe bağlı)") },
-                placeholder = { Text("örn. Makine Dinamiği") }, singleLine = true, modifier = Modifier.fillMaxWidth())
-            Hint("Ders adı yazarsan uygulamada ve bildirimlerde kodun yerine ad görünür.")
+                placeholder = { Text("örn. Akışkanlar Mekaniği II") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+            Hint("Ders adı uygulamada, bildirimlerde ve widget'ta kodun yerine görünür.")
+
+            HorizontalDivider()
+            SectionTitle("Ders saatleri")
+            courseSlots.forEach { s ->
+                Row(
+                    Modifier.fillMaxWidth().clickable { editingSlot = s }.padding(vertical = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Column(Modifier.weight(1f)) {
+                        Text("${dayLongName(s.day)}  ${timeRange(s.start, s.end)}")
+                        if (s.place.isNotBlank()) Hint(s.place)
+                    }
+                    Icon(Icons.Default.Edit, "Saati düzenle")
+                }
+            }
+            TextButton(onClick = { addingSlot = true }) {
+                Icon(Icons.Default.Add, null)
+                Spacer(Modifier.width(8.dp))
+                Text("Saat ekle")
+            }
 
             HorizontalDivider()
             SectionTitle("Dönemde kaç kez yapılacak?")
@@ -141,7 +173,7 @@ fun CourseEditScreen(snap: Snapshot, code: String, nav: Nav) {
             ChoiceRow((1..MAX_POLLS).map { it to "$it" }, polls) { polls = it }
             courseSlots.forEach { s ->
                 val times = pollTimes(s.start, s.end, polls).joinToString(", ") { it.format(timeFmt) }
-                Hint("${dayLongName(s.day)} ${s.start.format(timeFmt)}–${s.end.format(timeFmt)} → $times" +
+                Hint("${dayLongName(s.day)} ${timeRange(s.start, s.end)} → $times" +
                     (if (polls > 1) " saatlerinde sorulur" else " saatinde sorulur"))
             }
             if (polls > 1) {
@@ -167,7 +199,50 @@ fun CourseEditScreen(snap: Snapshot, code: String, nav: Nav) {
                 }
             }
             Button(onClick = { save() }, modifier = Modifier.fillMaxWidth()) { Text("Kaydet") }
+            TextButton(onClick = { confirmDelete = true }, modifier = Modifier.fillMaxWidth()) {
+                Text("Dersi programdan kaldır", color = Red)
+            }
             Spacer(Modifier.height(24.dp))
+        }
+    }
+
+    if (addingSlot) {
+        SlotDialog("Ders saati ekle", SlotDraft(code = code), showName = false, showCode = false,
+            onDismiss = { addingSlot = false }) { d ->
+            Repo.addSlot(ctx, Repo.newSlot(code, d.day, d.start, d.end, d.place))
+            Scheduler.reschedule(ctx, resetCursor = true)
+            addingSlot = false
+        }
+    }
+    editingSlot?.let { s ->
+        SlotDialog(
+            "Ders saatini düzenle",
+            SlotDraft(s.code, "", s.day, s.start, s.end, s.place),
+            showName = false,
+            showCode = false,
+            onDismiss = { editingSlot = null },
+            onDelete = {
+                Repo.removeSlot(ctx, s.id)
+                Scheduler.reschedule(ctx, resetCursor = true)
+                editingSlot = null
+            },
+        ) { d ->
+            Repo.updateSlot(ctx, s, s.copy(day = d.day, start = d.start, end = d.end, place = d.place))
+            Scheduler.reschedule(ctx, resetCursor = true)
+            editingSlot = null
+        }
+    }
+    if (confirmDelete) {
+        ConfirmDialog(
+            title = "Ders programdan kaldırılsın mı?",
+            text = "${snap.title(code)} dersinin bütün saatleri programdan silinir ve artık soru gelmez.",
+            confirm = "Kaldır",
+            onDismiss = { confirmDelete = false },
+        ) {
+            confirmDelete = false
+            Repo.deleteCourse(ctx, code)
+            Scheduler.reschedule(ctx, resetCursor = true)
+            nav.tab(Screen.Settings)
         }
     }
 }

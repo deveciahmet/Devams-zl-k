@@ -54,13 +54,13 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 
 /**
- * Programı fotoğraftan ekleme:
+ * Programı yapay zekâ ile ekleme (ŞİMDİLİK KAPALI, bkz. [PROMPT_IMPORT_ENABLED]; yerine Kepler'den ekleme var):
  * 1) Kullanıcı hazır metni (prompt) kopyalayıp fotoğrafla birlikte bir yapay zekâya gönderir.
  * 2) Yapay zekânın JSON cevabını buraya yapıştırır.
  * 3) Uygulama cevabı çözer, kontrol listesi gösterir, onaylanınca programa kaydeder.
  */
 @Composable
-fun ImportScreen(nav: Nav) {
+fun PromptImportScreen(nav: Nav) {
     val ctx = LocalContext.current
     val clipboard = LocalClipboardManager.current
     var answer by rememberSaveable { mutableStateOf("") }
@@ -70,7 +70,7 @@ fun ImportScreen(nav: Nav) {
     var editIndex by remember { mutableIntStateOf(-1) }
     var promptExpanded by remember { mutableStateOf(false) }
 
-    Scaffold(topBar = { BackBar("Programı fotoğraftan ekle", nav::pop) }) { pad ->
+    Scaffold(topBar = { BackBar("Yapay zekâ ile ekle", nav::pop) }) { pad ->
         LazyColumn(
             Modifier.fillMaxSize().padding(pad),
             contentPadding = PaddingValues(16.dp),

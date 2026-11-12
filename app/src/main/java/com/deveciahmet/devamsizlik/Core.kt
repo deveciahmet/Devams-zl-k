@@ -44,6 +44,8 @@ data class Slot(
     val day: Int,
     val start: LocalTime,
     val end: LocalTime,
+    /** Bina ve derslik, örn. "MKB A501" (bilinmiyorsa boş). */
+    val place: String = "",
 )
 
 /** Derse özel ayarlar (ders koduna göre saklanır). */
@@ -111,9 +113,34 @@ data class NotifySettings(
     val warnThreshold: Int = 1,
     /** Riskli derslerden kaç dakika önce hatırlatsın (0 = kapalı). */
     val preclassMinutes: Int = 60,
+    /** Sınavdan bir gün önce akşam hatırlatsın. */
+    val examReminder: Boolean = true,
 )
 
-enum class EventType { ASK, REMIND, PRECLASS, WEEKLY }
+/** Elle eklenen bir sınav (vize, final, quiz …). */
+data class Exam(
+    val id: String,
+    /** Dersin kodu; programda olmayan bir sınav için boş olabilir. */
+    val code: String,
+    /** "Vize", "Final", "Quiz" … */
+    val title: String,
+    val date: LocalDate,
+    val time: LocalTime? = null,
+    val place: String = "",
+) {
+    /** Sınav günü geçtiyse ya da bugünkü sınavın üzerinden 3 saat geçtiyse geçmiş sayılır. */
+    fun isPast(now: LocalDateTime): Boolean {
+        val today = now.toLocalDate()
+        if (date.isBefore(today)) return true
+        if (date.isAfter(today) || time == null) return false
+        return LocalDateTime.of(date, time).plusHours(3).isBefore(now)
+    }
+}
+
+/** Sınav hatırlatmasının saati (sınavdan önceki akşam). */
+val EXAM_REMINDER_TIME: LocalTime = LocalTime.of(20, 0)
+
+enum class EventType { ASK, REMIND, PRECLASS, WEEKLY, EXAM }
 
 data class Event(val time: LocalDateTime, val type: EventType, val key: String)
 
@@ -136,6 +163,39 @@ fun dayLongName(day: Int): String = dayLong[(day - 1).coerceIn(0, 6)]
 val timeFmt: DateTimeFormatter = DateTimeFormatter.ofPattern("HH:mm")
 val dateFmt: DateTimeFormatter = DateTimeFormatter.ofPattern("d MMM", TR)
 val dateLongFmt: DateTimeFormatter = DateTimeFormatter.ofPattern("d MMMM yyyy", TR)
+val dateDayFmt: DateTimeFormatter = DateTimeFormatter.ofPattern("d MMMM EEEE", TR)
+
+fun timeRange(start: LocalTime, end: LocalTime): String = "${start.format(timeFmt)}–${end.format(timeFmt)}"
+
+/** Bugünden bir tarihe kaç gün var (geçmişse eksi). */
+fun daysUntil(today: LocalDate, date: LocalDate): Long = ChronoUnit.DAYS.between(today, date)
+
+/** "Bugün", "Yarın", "5 gün" */
+fun daysLeftText(days: Long): String = when {
+    days < 0 -> "Geçti"
+    days == 0L -> "Bugün"
+    days == 1L -> "Yarın"
+    else -> "$days gün"
+}
+
+/** Bir tarihi bugüne göre okunaklı yazar: "Bugün", "Yarın", "Perşembe", "17 Kas Salı". */
+fun relativeDay(today: LocalDate, date: LocalDate): String = when (val d = daysUntil(today, date)) {
+    0L -> "Bugün"
+    1L -> "Yarın"
+    -1L -> "Dün"
+    in 2L..6L -> dayLongName(date.dayOfWeek.value)
+    else -> "${date.format(dateFmt)} ${dayShortName(date.dayOfWeek.value)}"
+}
+
+/** Dönemin başlangıç tarihine göre İTÜ biçiminde varsayılan ad: "2026-2027 Güz Dönemi". */
+fun defaultTermName(start: LocalDate): String {
+    val y = start.year
+    return when (start.monthValue) {
+        in 8..12 -> "$y-${y + 1} Güz Dönemi"
+        in 1..5 -> "${y - 1}-$y Bahar Dönemi"
+        else -> "${y - 1}-$y Yaz Dönemi"
+    }
+}
 
 // ---------------- Hesaplamalar ----------------
 
@@ -153,6 +213,10 @@ fun mondayOf(d: LocalDate): LocalDate = d.with(TemporalAdjusters.previousOrSame(
 /** Verilen gün dönemin kaçıncı haftası (1 tabanlı; dönem öncesi ≤ 0). */
 fun weekNumber(semesterStart: LocalDate, date: LocalDate): Int =
     Math.floorDiv(ChronoUnit.DAYS.between(mondayOf(semesterStart), date), 7L).toInt() + 1
+
+/** Dönemin son günü (son haftanın Pazar'ı). */
+fun semesterEnd(semesterStart: LocalDate, weeks: Int): LocalDate =
+    mondayOf(semesterStart).plusWeeks(weeks.coerceAtLeast(1).toLong()).minusDays(1)
 
 /**
  * Yoklama saatleri. k yoklama varsa 1., 2., … yoklama dersin başlamasından 1, 2, … saat sonra,
@@ -185,6 +249,27 @@ fun buildPolls(sessions: List<Session>, configs: Map<String, CourseConfig>): Lis
         pollTimes(s.slot.start, s.slot.end, k).forEachIndexed { i, t ->
             out += Poll(s, i + 1, k, LocalDateTime.of(s.date, t))
         }
+    }
+    return out
+}
+
+/**
+ * Tatil günlerindeki yoklamalar, elle başka bir cevap verilmediyse "yapılmadı" sayılır.
+ * Böylece tatilden sonra eklenen dersler ya da arttırılan yoklamalar da kendiliğinden tatile uyar.
+ */
+fun effectiveStatuses(polls: List<Poll>, explicit: Map<String, Status>, holidays: Set<LocalDate>): Map<String, Status> {
+    if (holidays.isEmpty()) return explicit
+    val out = HashMap(explicit)
+    for (p in polls) if (p.session.date in holidays && p.key !in explicit) out[p.key] = Status.CANCELLED
+    return out
+}
+
+/** Ardışık tatil günlerini [ilk gün, son gün] aralıklarına böler. */
+fun holidayRanges(dates: Collection<LocalDate>): List<Pair<LocalDate, LocalDate>> {
+    val out = ArrayList<Pair<LocalDate, LocalDate>>()
+    for (d in dates.toSortedSet()) {
+        val last = out.lastOrNull()
+        if (last != null && last.second.plusDays(1) == d) out[out.lastIndex] = last.first to d else out += d to d
     }
     return out
 }
@@ -259,6 +344,7 @@ fun summarize(polls: List<Poll>, status: (String) -> Status?, from: LocalDateTim
  * - REMIND: cevap gelmezse belirli süre sonra bir kez daha
  * - PRECLASS: hakkı azalan (riskli) derslerden önce "kaçırma" hatırlatması
  * - WEEKLY: haftalık özet
+ * - EXAM: sınavdan önceki akşam hatırlatma
  */
 fun computeEvents(
     polls: List<Poll>,
@@ -267,6 +353,7 @@ fun computeEvents(
     ns: NotifySettings,
     semesterStart: LocalDate,
     weeks: Int,
+    exams: List<Exam> = emptyList(),
 ): List<Event> {
     val out = ArrayList<Event>()
     for (p in polls) {
@@ -287,5 +374,76 @@ fun computeEvents(
             out += Event(LocalDateTime.of(date, ns.weeklyTime), EventType.WEEKLY, "weekly")
         }
     }
+    if (ns.examReminder) {
+        for (e in exams) out += Event(LocalDateTime.of(e.date.minusDays(1), EXAM_REMINDER_TIME), EventType.EXAM, e.id)
+    }
     return out
+}
+
+// ---------------- Verinin hesaplanmış hali ----------------
+
+/** Belirli bir andaki bütün verinin hesaplanmış hali. Arayüz, bildirimler ve widget bunun üzerinden çalışır. */
+class Snapshot(
+    val now: LocalDateTime,
+    val semesterStart: LocalDate,
+    val weeks: Int,
+    val requiredPercent: Int,
+    val slots: List<Slot>,
+    val configs: Map<String, CourseConfig>,
+    val sessions: List<Session>,
+    val polls: List<Poll>,
+    /** Etkin cevaplar: elle verilenler + tatil günlerindeki "yapılmadı"lar. */
+    val statuses: Map<String, Status>,
+    val stats: List<CourseStats>,
+    val notify: NotifySettings,
+    val exams: List<Exam> = emptyList(),
+    val holidays: Set<LocalDate> = emptySet(),
+    val termName: String = defaultTermName(semesterStart),
+) {
+    fun status(key: String): Status? = statuses[key]
+    fun config(code: String): CourseConfig = configs[code] ?: CourseConfig()
+    fun stat(code: String): CourseStats? = stats.firstOrNull { it.code == code }
+    fun title(code: String): String = config(code).name.ifBlank { code }
+    val today: LocalDate get() = now.toLocalDate()
+    val currentWeek: Int get() = weekNumber(semesterStart, today)
+    val endDate: LocalDate get() = semesterEnd(semesterStart, weeks)
+    val courseCodes: List<String> get() = slots.map { it.code }.distinct().sorted()
+    val unansweredPast: List<Poll> by lazy { polls.filter { !it.time.isAfter(now) && statuses[it.key] == null } }
+
+    /** Dersin bütün yoklamaları "yapılmadı" mı (iptal ya da tatil)? */
+    fun isCancelled(s: Session): Boolean = statuses[pollKey(s.key, 1)] == Status.CANCELLED
+
+    /** Bugünden itibaren sınavlar, en yakını başta. */
+    val upcomingExams: List<Exam> by lazy {
+        exams.filter { !it.isPast(now) }.sortedWith(compareBy<Exam>({ it.date }, { it.time ?: LocalTime.MIN }))
+    }
+    val pastExams: List<Exam> by lazy {
+        exams.filter { it.isPast(now) }.sortedWith(compareByDescending<Exam> { it.date }.thenByDescending { it.time })
+    }
+
+    /** "Isı Geçişi · Vize" */
+    fun examTitle(e: Exam): String = if (e.code.isBlank()) e.title else "${title(e.code)} · ${e.title}"
+}
+
+fun buildSnapshot(
+    now: LocalDateTime,
+    semesterStart: LocalDate,
+    weeks: Int,
+    requiredPercent: Int,
+    slots: List<Slot>,
+    configs: Map<String, CourseConfig>,
+    explicit: Map<String, Status>,
+    notify: NotifySettings = NotifySettings(),
+    exams: List<Exam> = emptyList(),
+    holidays: Set<LocalDate> = emptySet(),
+    termName: String = "",
+): Snapshot {
+    val sessions = generateSessions(semesterStart, weeks, slots)
+    val polls = buildPolls(sessions, configs)
+    val statuses = effectiveStatuses(polls, explicit, holidays)
+    val stats = computeStats(polls, { statuses[it] }, configs, requiredPercent, now)
+    return Snapshot(
+        now, semesterStart, weeks, requiredPercent, slots, configs, sessions, polls, statuses, stats, notify,
+        exams, holidays, termName.ifBlank { defaultTermName(semesterStart) },
+    )
 }

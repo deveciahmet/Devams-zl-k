@@ -165,4 +165,69 @@ class CoreTest {
         assertEquals("ITB 220", normalizeCode("ITB 220"))
         assertEquals("Fizik Laboratuvarı", normalizeCode(" Fizik   Laboratuvarı "))
     }
+
+    @Test
+    fun holidays_cancelEveryClassOfTheDayUnlessAnsweredOtherwise() {
+        val cfgs = mapOf("MAK 303" to CourseConfig(polls = 2))
+        val polls = buildPolls(generateSessions(start, 13, slots), cfgs)
+        val holiday = LocalDate.of(2026, 10, 29) // Perşembe: MAK 303 (2 yoklama)
+        val explicitKey = polls.first { it.session.date == LocalDate.of(2026, 9, 28) }.key
+        val st = effectiveStatuses(polls, mapOf(explicitKey to Status.ABSENT), setOf(holiday))
+        val onHoliday = polls.filter { it.session.date == holiday }
+        assertEquals(2, onHoliday.size)
+        assertTrue(onHoliday.all { st[it.key] == Status.CANCELLED })
+        assertEquals(Status.ABSENT, st[explicitKey])
+        // Elle "girdim" denmişse tatil onu ezmez
+        val held = effectiveStatuses(polls, mapOf(onHoliday[0].key to Status.ATTENDED), setOf(holiday))
+        assertEquals(Status.ATTENDED, held[onHoliday[0].key])
+        assertEquals(Status.CANCELLED, held[onHoliday[1].key])
+        // Otomatik toplamdan düşülür: 26 ders × 2 − 2 = 50 → hak ⌊50 × 0,3⌋ = 15
+        val mak303 = computeStats(polls, { st[it] }, cfgs, 70, LocalDateTime.of(2026, 11, 4, 12, 0)).first { it.code == "MAK 303" }
+        assertEquals(50, mak303.total)
+        assertEquals(2, mak303.cancelled)
+    }
+
+    @Test
+    fun holidayRanges_groupConsecutiveDays() {
+        val d = { m: Int, day: Int -> LocalDate.of(2026, m, day) }
+        assertEquals(
+            listOf(d(10, 28) to d(10, 29), d(12, 31) to d(12, 31)),
+            holidayRanges(setOf(d(12, 31), d(10, 29), d(10, 28))),
+        )
+        assertTrue(holidayRanges(emptySet()).isEmpty())
+    }
+
+    @Test
+    fun events_examReminderTheEveningBefore() {
+        val exam = Exam("e1", "MAK 335", "Vize", LocalDate.of(2026, 11, 17), t("13:30"))
+        val ev = computeEvents(emptyList(), { null }, emptySet(), NotifySettings(weeklyEnabled = false), start, 13, listOf(exam))
+        assertEquals(listOf(Event(LocalDateTime.of(2026, 11, 16, 20, 0), EventType.EXAM, "e1")), ev)
+        val off = computeEvents(emptyList(), { null }, emptySet(),
+            NotifySettings(weeklyEnabled = false, examReminder = false), start, 13, listOf(exam))
+        assertTrue(off.isEmpty())
+    }
+
+    @Test
+    fun exams_pastAndDaysLeft() {
+        val now = LocalDateTime.of(2026, 11, 4, 12, 0)
+        val today = now.toLocalDate()
+        assertFalse(Exam("a", "", "Vize", today).isPast(now))
+        assertFalse(Exam("a", "", "Vize", today, t("10:00")).isPast(now)) // 3 saatten az geçti
+        assertTrue(Exam("a", "", "Vize", today, t("08:30")).isPast(now))
+        assertTrue(Exam("a", "", "Vize", today.minusDays(1)).isPast(now))
+        assertEquals("Bugün", daysLeftText(0))
+        assertEquals("Yarın", daysLeftText(1))
+        assertEquals("13 gün", daysLeftText(daysUntil(today, LocalDate.of(2026, 11, 17))))
+        assertEquals("Yarın", relativeDay(today, today.plusDays(1)))
+        assertEquals("Cuma", relativeDay(today, today.plusDays(2)))
+        assertEquals("17 Kas Sal", relativeDay(today, LocalDate.of(2026, 11, 17)))
+    }
+
+    @Test
+    fun termNames() {
+        assertEquals("2026-2027 Güz Dönemi", defaultTermName(LocalDate.of(2026, 9, 28)))
+        assertEquals("2026-2027 Bahar Dönemi", defaultTermName(LocalDate.of(2027, 2, 15)))
+        assertEquals("2026-2027 Yaz Dönemi", defaultTermName(LocalDate.of(2027, 7, 5)))
+        assertEquals(LocalDate.of(2026, 12, 27), semesterEnd(start, 13))
+    }
 }

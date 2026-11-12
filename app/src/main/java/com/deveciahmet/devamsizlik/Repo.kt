@@ -9,39 +9,16 @@ import java.time.LocalDateTime
 import java.time.LocalTime
 import java.util.UUID
 
-/** Belirli bir andaki bütün verinin hesaplanmış hali. Arayüz ve bildirimler bunun üzerinden çalışır. */
-class Snapshot(
-    val now: LocalDateTime,
-    val semesterStart: LocalDate,
-    val weeks: Int,
-    val requiredPercent: Int,
-    val slots: List<Slot>,
-    val configs: Map<String, CourseConfig>,
-    val sessions: List<Session>,
-    val polls: List<Poll>,
-    val statuses: Map<String, Status>,
-    val stats: List<CourseStats>,
-    val notify: NotifySettings,
-) {
-    fun status(key: String): Status? = statuses[key]
-    fun config(code: String): CourseConfig = configs[code] ?: CourseConfig()
-    fun stat(code: String): CourseStats? = stats.firstOrNull { it.code == code }
-    fun title(code: String): String = config(code).name.ifBlank { code }
-    val currentWeek: Int get() = weekNumber(semesterStart, now.toLocalDate())
-    val courseCodes: List<String> get() = slots.map { it.code }.distinct().sorted()
-    val unansweredPast: List<Poll> by lazy { polls.filter { !it.time.isAfter(now) && statuses[it.key] == null } }
-}
-
 object Repo {
-    private const val SETTINGS = "settings"
-    private const val ATTENDANCE = "attendance"
+    const val SETTINGS = "settings"
+    const val ATTENDANCE = "attendance"
 
     // 4 Kasım 2026 6. hafta → 1. haftanın Pazartesi'si 28 Eylül 2026.
     private val DEFAULT_START: LocalDate = LocalDate.of(2026, 9, 28)
 
     private fun t(s: String): LocalTime = LocalTime.parse(s)
 
-    /** İTÜ OBS'deki ders programı. */
+    /** İTÜ OBS'deki ders programı (ilk kurulumda, kayıtlı program yokken kullanılır). */
     val defaultSlots = listOf(
         Slot("mak335-pzt", "MAK 335", 1, t("10:30"), t("13:29")),
         Slot("mak303-pzt", "MAK 303", 1, t("15:30"), t("17:29")),
@@ -87,35 +64,40 @@ object Repo {
     fun setCurrentWeek(ctx: Context, week: Int, today: LocalDate = AppClock.today()) =
         setSemesterStart(ctx, mondayOf(today).minusWeeks((week - 1).toLong()))
 
+    /** Dönemin adı ("2026-2027 Güz Dönemi"); kaydedilmemişse başlangıç tarihinden çıkarılır. */
+    fun termName(ctx: Context): String = settings(ctx).getString("term_name", null).orEmpty()
+        .ifBlank { defaultTermName(semesterStart(ctx)) }
+
+    fun setTermName(ctx: Context, name: String) = settings(ctx).edit().putString("term_name", name.trim()).apply()
+
     // ---------------- Ders programı ----------------
 
     fun slots(ctx: Context): List<Slot> {
         val json = settings(ctx).getString("slots", null) ?: return defaultSlots
-        return try {
-            val arr = JSONArray(json)
-            (0 until arr.length()).map { i ->
-                val o = arr.getJSONObject(i)
-                Slot(o.getString("id"), o.getString("code"), o.getInt("day"),
-                    t(o.getString("start")), t(o.getString("end")))
-            }
-        } catch (e: Exception) {
-            defaultSlots
-        }
+        return runCatching { slotsFromJson(JSONArray(json)) }.getOrDefault(defaultSlots)
     }
 
-    fun saveSlots(ctx: Context, list: List<Slot>) {
-        val arr = JSONArray()
+    fun slotsFromJson(arr: JSONArray): List<Slot> = (0 until arr.length()).map { i ->
+        val o = arr.getJSONObject(i)
+        Slot(o.getString("id"), o.getString("code"), o.getInt("day"),
+            t(o.getString("start")), t(o.getString("end")), o.optString("place", ""))
+    }
+
+    fun slotsToJson(list: List<Slot>): JSONArray = JSONArray().apply {
         list.forEach {
-            arr.put(JSONObject().apply {
+            put(JSONObject().apply {
                 put("id", it.id); put("code", it.code); put("day", it.day)
                 put("start", it.start.toString()); put("end", it.end.toString())
+                if (it.place.isNotBlank()) put("place", it.place)
             })
         }
-        settings(ctx).edit().putString("slots", arr.toString()).apply()
     }
 
-    fun newSlot(code: String, day: Int, start: LocalTime, end: LocalTime) =
-        Slot(UUID.randomUUID().toString(), normalizeCode(code), day, start, end)
+    fun saveSlots(ctx: Context, list: List<Slot>) =
+        settings(ctx).edit().putString("slots", slotsToJson(list).toString()).apply()
+
+    fun newSlot(code: String, day: Int, start: LocalTime, end: LocalTime, place: String = "") =
+        Slot(UUID.randomUUID().toString(), normalizeCode(code), day, start, end, place.trim())
 
     fun addSlot(ctx: Context, slot: Slot) = saveSlots(ctx, slots(ctx) + slot)
 
@@ -139,13 +121,19 @@ object Repo {
 
     fun removeSlot(ctx: Context, id: String) = saveSlots(ctx, slots(ctx).filterNot { it.id == id })
 
-    fun resetSlots(ctx: Context) = settings(ctx).edit().remove("slots").apply()
+    /** Dersi programdan tamamen kaldırır (bütün saatleri ve ayarları). */
+    fun deleteCourse(ctx: Context, code: String) {
+        saveSlots(ctx, slots(ctx).filterNot { it.code == code })
+        val map = courseConfigs(ctx).toMutableMap()
+        if (map.remove(code) != null) saveCourseConfigs(ctx, map)
+    }
 
     /**
-     * Yapay zekâdan gelen programı kaydeder. Mevcut programda aynı ders/gün/başlangıç saatindeki kayıtlar
-     * aynı kimlikle tutulur, böylece yoklama geçmişi kaybolmaz. Dönen değer: kaydedilen ders saati sayısı.
+     * Gelen programı kaydeder. Mevcut programda aynı ders/gün/başlangıç saatindeki kayıtlar aynı kimlikle tutulur,
+     * böylece yoklama geçmişi kaybolmaz. [overwriteNames]: ders adları kayıtlı adların üzerine yazılsın mı
+     * (İTÜ'den gelen adlar için evet). Dönen değer: kaydedilen ders saati sayısı.
      */
-    fun importSlots(ctx: Context, entries: List<ImportedSlot>, replace: Boolean): Int {
+    fun importSlots(ctx: Context, entries: List<ImportedSlot>, replace: Boolean, overwriteNames: Boolean = false): Int {
         val existing = slots(ctx)
         val used = HashSet<String>()
         val incoming = entries.map { e ->
@@ -154,9 +142,9 @@ object Repo {
             }
             if (match != null) {
                 used += match.id
-                match.copy(code = e.code, end = e.end)
+                match.copy(code = e.code, end = e.end, place = e.place.ifBlank { match.place })
             } else {
-                newSlot(e.code, e.day, e.start, e.end)
+                newSlot(e.code, e.day, e.start, e.end, e.place)
             }
         }
         val result = if (replace) incoming else existing.filterNot { it.id in used } + incoming
@@ -167,7 +155,7 @@ object Repo {
         for (e in entries) {
             if (e.name.isBlank()) continue
             val c = cfgs[e.code] ?: CourseConfig()
-            if (c.name.isBlank()) {
+            if (c.name.isBlank() || (overwriteNames && c.name != e.name)) {
                 cfgs[e.code] = c.copy(name = e.name)
                 changed = true
             }
@@ -176,33 +164,61 @@ object Repo {
         return incoming.size
     }
 
+    /**
+     * İTÜ'nün açılan dersler listesinden gelen bilgiyi mevcut programa işler: adı boş derslere adını,
+     * derslik bilgisi olmayan ders saatlerine (şubesi belli olduğunda) binayı ve dersliği yazar.
+     * Dönen değer: bilgisi güncellenen ders sayısı.
+     */
+    fun applyCatalog(ctx: Context, catalog: Map<String, List<ItuSection>>): Int {
+        val changed = HashSet<String>()
+        val cfgs = courseConfigs(ctx).toMutableMap()
+        for (code in slots(ctx).map { it.code }.distinct()) {
+            val name = catalog[code]?.firstOrNull()?.name ?: continue
+            val c = cfgs[code] ?: CourseConfig()
+            if (c.name.isBlank()) {
+                cfgs[code] = c.copy(name = name)
+                changed += code
+            }
+        }
+        if (changed.isNotEmpty()) saveCourseConfigs(ctx, cfgs)
+
+        val slots = slots(ctx)
+        val updated = slots.map { s ->
+            if (s.place.isNotBlank()) return@map s
+            val place = placeFor(catalog[s.code].orEmpty(), s.day, s.start) ?: return@map s
+            changed += s.code
+            s.copy(place = place)
+        }
+        if (updated != slots) saveSlots(ctx, updated)
+        return changed.size
+    }
+
     // ---------------- Ders ayarları ----------------
 
     fun courseConfigs(ctx: Context): Map<String, CourseConfig> {
         val json = settings(ctx).getString("courses", null) ?: return emptyMap()
-        return try {
-            val o = JSONObject(json)
-            val out = HashMap<String, CourseConfig>()
-            val keys = o.keys()
-            while (keys.hasNext()) {
-                val k = keys.next()
-                val c = o.getJSONObject(k)
-                out[k] = CourseConfig(
-                    name = c.optString("name", ""),
-                    totalSessions = if (c.has("total")) c.optInt("total").takeIf { it > 0 } else null,
-                    mode = runCatching { LimitMode.valueOf(c.optString("mode", "DEFAULT")) }.getOrDefault(LimitMode.DEFAULT),
-                    requiredPercent = c.optInt("percent", 70).coerceIn(0, 100),
-                    allowedCount = c.optInt("count", 3).coerceAtLeast(0),
-                    polls = c.optInt("polls", 1).coerceIn(1, MAX_POLLS),
-                )
-            }
-            out
-        } catch (e: Exception) {
-            emptyMap()
-        }
+        return runCatching { configsFromJson(JSONObject(json)) }.getOrDefault(emptyMap())
     }
 
-    private fun saveCourseConfigs(ctx: Context, map: Map<String, CourseConfig>) {
+    fun configsFromJson(o: JSONObject): Map<String, CourseConfig> {
+        val out = HashMap<String, CourseConfig>()
+        val keys = o.keys()
+        while (keys.hasNext()) {
+            val k = keys.next()
+            val c = o.getJSONObject(k)
+            out[k] = CourseConfig(
+                name = c.optString("name", ""),
+                totalSessions = if (c.has("total")) c.optInt("total").takeIf { it > 0 } else null,
+                mode = runCatching { LimitMode.valueOf(c.optString("mode", "DEFAULT")) }.getOrDefault(LimitMode.DEFAULT),
+                requiredPercent = c.optInt("percent", 70).coerceIn(0, 100),
+                allowedCount = c.optInt("count", 3).coerceAtLeast(0),
+                polls = c.optInt("polls", 1).coerceIn(1, MAX_POLLS),
+            )
+        }
+        return out
+    }
+
+    fun configsToJson(map: Map<String, CourseConfig>): JSONObject {
         val o = JSONObject()
         for ((code, c) in map) {
             o.put(code, JSONObject().apply {
@@ -214,8 +230,11 @@ object Repo {
                 put("polls", c.polls)
             })
         }
-        settings(ctx).edit().putString("courses", o.toString()).apply()
+        return o
     }
+
+    private fun saveCourseConfigs(ctx: Context, map: Map<String, CourseConfig>) =
+        settings(ctx).edit().putString("courses", configsToJson(map).toString()).apply()
 
     /** Ders ayarlarını kaydeder; kod değiştiyse programdaki bütün saatlerini de yeni koda taşır. Yeni kodu döner. */
     fun saveCourse(ctx: Context, oldCode: String, newCode: String, cfg: CourseConfig): String {
@@ -234,11 +253,13 @@ object Repo {
      */
     fun fillNewPolls(ctx: Context, code: String, oldPolls: Int, now: LocalDateTime = AppClock.now()) {
         val snap = snapshot(ctx, now)
+        val explicit = statusMap(ctx)
         val e = attendance(ctx).edit()
         var any = false
         for (p in snap.polls) {
-            if (p.code != code || p.index <= oldPolls || p.time.isAfter(now) || snap.status(p.key) != null) continue
-            val first = snap.status(pollKey(p.session.key, 1)) ?: continue
+            if (p.code != code || p.index <= oldPolls || p.time.isAfter(now) || explicit[p.key] != null) continue
+            if (p.session.date in snap.holidays) continue
+            val first = explicit[pollKey(p.session.key, 1)] ?: continue
             e.putString(p.key, first.name)
             any = true
         }
@@ -247,6 +268,7 @@ object Repo {
 
     // ---------------- Yoklama kayıtları ----------------
 
+    /** Elle verilmiş cevaplar (tatiller hariç). */
     fun statusMap(ctx: Context): Map<String, Status> {
         val out = HashMap<String, Status>()
         for ((k, v) in attendance(ctx).all) {
@@ -267,6 +289,86 @@ object Repo {
         e.commit()
     }
 
+    // ---------------- Tatiller ----------------
+
+    fun holidays(ctx: Context): Set<LocalDate> {
+        val json = settings(ctx).getString("holidays", null) ?: return emptySet()
+        return runCatching { datesFromJson(JSONArray(json)) }.getOrDefault(emptySet())
+    }
+
+    fun datesFromJson(arr: JSONArray): Set<LocalDate> =
+        (0 until arr.length()).mapNotNull { runCatching { LocalDate.parse(arr.getString(it)) }.getOrNull() }.toSortedSet()
+
+    fun datesToJson(dates: Collection<LocalDate>): JSONArray = JSONArray().apply { dates.sorted().forEach { put(it.toString()) } }
+
+    private fun saveHolidays(ctx: Context, dates: Collection<LocalDate>) =
+        settings(ctx).edit().putString("holidays", datesToJson(dates).toString()).apply()
+
+    /**
+     * Günleri tatil yapar: o günlerdeki bütün dersler "yapılmadı" sayılır. O günler için daha önce verilmiş
+     * cevaplar silinir ki tatil hepsine uygulansın.
+     */
+    fun addHolidays(ctx: Context, dates: Collection<LocalDate>) {
+        if (dates.isEmpty()) return
+        val days = dates.map { it.toString() }.toSet()
+        val att = attendance(ctx)
+        val e = att.edit()
+        var any = false
+        for (k in att.all.keys) {
+            if (k.split("|").getOrNull(1) in days) {
+                e.remove(k)
+                any = true
+            }
+        }
+        if (any) e.commit()
+        saveHolidays(ctx, holidays(ctx) + dates)
+    }
+
+    fun removeHolidays(ctx: Context, dates: Collection<LocalDate>) = saveHolidays(ctx, holidays(ctx) - dates.toSet())
+
+    // ---------------- Sınavlar ----------------
+
+    fun exams(ctx: Context): List<Exam> {
+        val json = settings(ctx).getString("exams", null) ?: return emptyList()
+        return runCatching { examsFromJson(JSONArray(json)) }.getOrDefault(emptyList())
+    }
+
+    fun examsFromJson(arr: JSONArray): List<Exam> = (0 until arr.length()).mapNotNull { i ->
+        val o = arr.optJSONObject(i) ?: return@mapNotNull null
+        val date = runCatching { LocalDate.parse(o.getString("date")) }.getOrNull() ?: return@mapNotNull null
+        Exam(
+            id = o.optString("id").ifBlank { UUID.randomUUID().toString() },
+            code = o.optString("code", ""),
+            title = o.optString("title", ""),
+            date = date,
+            time = o.optString("time", "").takeIf { it.isNotBlank() }?.let { runCatching { LocalTime.parse(it) }.getOrNull() },
+            place = o.optString("place", ""),
+        )
+    }
+
+    fun examsToJson(list: List<Exam>): JSONArray = JSONArray().apply {
+        list.forEach { e ->
+            put(JSONObject().apply {
+                put("id", e.id); put("code", e.code); put("title", e.title); put("date", e.date.toString())
+                e.time?.let { put("time", it.toString()) }
+                if (e.place.isNotBlank()) put("place", e.place)
+            })
+        }
+    }
+
+    private fun saveExams(ctx: Context, list: List<Exam>) =
+        settings(ctx).edit().putString("exams", examsToJson(list).toString()).apply()
+
+    /** Sınavı ekler ya da aynı kimlikteki sınavın yerine koyar. */
+    fun saveExam(ctx: Context, exam: Exam) {
+        val list = exams(ctx)
+        saveExams(ctx, if (list.any { it.id == exam.id }) list.map { if (it.id == exam.id) exam else it } else list + exam)
+    }
+
+    fun removeExam(ctx: Context, id: String) = saveExams(ctx, exams(ctx).filterNot { it.id == id })
+
+    fun newExamId(): String = UUID.randomUUID().toString()
+
     // ---------------- Bildirim ayarları ----------------
 
     fun notifySettings(ctx: Context): NotifySettings {
@@ -280,6 +382,7 @@ object Repo {
             warnEnabled = p.getBoolean("n_warn", true),
             warnThreshold = p.getInt("n_warn_threshold", 1).coerceIn(1, 10),
             preclassMinutes = p.getInt("n_preclass", 60).coerceAtLeast(0),
+            examReminder = p.getBoolean("n_exam", true),
         )
     }
 
@@ -292,6 +395,7 @@ object Repo {
             .putBoolean("n_warn", n.warnEnabled)
             .putInt("n_warn_threshold", n.warnThreshold)
             .putInt("n_preclass", n.preclassMinutes)
+            .putBoolean("n_exam", n.examReminder)
             .apply()
     }
 
@@ -305,16 +409,17 @@ object Repo {
 
     // ---------------- Hepsi bir arada ----------------
 
-    fun snapshot(ctx: Context, now: LocalDateTime = AppClock.now()): Snapshot {
-        val start = semesterStart(ctx)
-        val weeks = weeks(ctx)
-        val req = requiredPercent(ctx)
-        val slots = slots(ctx)
-        val configs = courseConfigs(ctx)
-        val sessions = generateSessions(start, weeks, slots)
-        val polls = buildPolls(sessions, configs)
-        val statuses = statusMap(ctx)
-        val stats = computeStats(polls, { statuses[it] }, configs, req, now)
-        return Snapshot(now, start, weeks, req, slots, configs, sessions, polls, statuses, stats, notifySettings(ctx))
-    }
+    fun snapshot(ctx: Context, now: LocalDateTime = AppClock.now()): Snapshot = buildSnapshot(
+        now = now,
+        semesterStart = semesterStart(ctx),
+        weeks = weeks(ctx),
+        requiredPercent = requiredPercent(ctx),
+        slots = slots(ctx),
+        configs = courseConfigs(ctx),
+        explicit = statusMap(ctx),
+        notify = notifySettings(ctx),
+        exams = exams(ctx),
+        holidays = holidays(ctx),
+        termName = termName(ctx),
+    )
 }
