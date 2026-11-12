@@ -2,9 +2,6 @@ name: APK derle
 
 on:
   push:
-    paths-ignore:
-      - 'ios/**'
-      - '.github/workflows/ios.yml'
   workflow_dispatch:
 
 permissions:

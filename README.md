@@ -1,8 +1,7 @@
-# Devamsızlık Takibi (Android + iOS)
+# Devamsızlık Takibi (Android)
 
 İTÜ ders programına göre her dersin bitiminde **"MAK 335 dersine girdin mi?"** diye bildirim gönderen,
-devamsızlıklarını sayan ve hakkı biten dersleri uyaran uygulama. Android sürümü repo kökünde (`app/`),
-iPhone sürümü `ios/` klasöründe; ikisinin özellikleri aynı.
+devamsızlıklarını sayan ve hakkı biten dersleri uyaran Android uygulaması.
 
 ## Kurulum (Android)
 1. Repodaki **Releases → latest** altından `Devamsizlik.apk` dosyasını telefona indir
@@ -61,38 +60,3 @@ iPhone sürümü `ios/` klasöründe; ikisinin özellikleri aynı.
 ```
 APK: `app/build/outputs/apk/debug/app-debug.apk`
 Testler ekranların görüntülerini `app/build/screenshots/` altına da kaydeder.
-
-## iPhone (iOS) sürümü
-
-`ios/` klasöründe SwiftUI ile yazılmış iPhone sürümü var (iOS 16 ve üstü).
-
-### iPhone'a kurulum
-Apple, iPhone'a kurulan her uygulamanın imzalanmasını istiyor; bu yüzden Android'deki gibi dosyayı açıp kurmak yok.
-Üç yol var:
-
-1. **AltStore veya SideStore (Mac gerekmez, ücretsiz):** Releases → latest altından `Devamsizlik-imzasiz.ipa`
-   dosyasını indir ve AltStore / SideStore ile kur. Uygulama kendi Apple kimliğinle imzalanır. Ücretsiz Apple
-   hesabıyla imza 7 gün geçerli; AltStore / SideStore'dan haftada bir yenilemek gerekir.
-2. **Mac + Xcode (ücretsiz Apple kimliği):**
-   ```
-   brew install xcodegen
-   cd ios && xcodegen generate && open Devamsizlik.xcodeproj
-   ```
-   Xcode'da *Signing & Capabilities → Team* kısmından Apple kimliğini seç, iPhone'u bağla ve ▶︎ ile çalıştır.
-   Ücretsiz hesapta da 7 gün geçerli.
-3. **Apple Developer Program (yıllık ücretli):** TestFlight ile kendine ve arkadaşlarına dağıtılabilir.
-
-### iOS'a özel farklar
-- **Evet / Hayır / Ders yapılmadı** tuşlarını görmek için gelen bildirimi basılı tut ya da aşağı çek.
-  Tuşa basınca cevap uygulama açılmadan kaydedilir.
-- iOS'ta uygulamalar istedikleri an çalışamadığı için bütün sorular önceden zamanlanır ve iOS en fazla 64 bekleyen
-  bildirime izin verir. Uygulama yaklaşık 2 haftalık soruyu sıraya koyar; sıra her açılışta ve her cevapta yenilenir.
-  Uygulama uzun süre hiç açılmazsa "Bildirimler duracak" hatırlatması gelir.
-- Veriler telefonda saklanır; Android ve iPhone arasında paylaşılmaz.
-
-### Geliştirme
-```
-cd ios && swift test     # çekirdek testleri (hesaplamalar, içe aktarma, bildirim planı) — Linux'ta da çalışır
-```
-GitHub Actions'taki **iOS derle** iş akışı macOS'ta testleri çalıştırır, simülatörde ekran görüntüleri alır
-(`ios-ekran-goruntuleri` çıktısı) ve imzasız `.ipa` dosyasını Releases'e ekler.
